@@ -551,10 +551,14 @@ if st.button(
         )
 
 
-    except Exception as e:
+except Exception as e:
+    import traceback
 
-        st.session_state["fatal"] = str(e)
-
+    st.session_state["fatal"] = (
+        str(e)
+        + "\n\n完整错误：\n"
+        + traceback.format_exc()
+    )
 
 # =========================
 # 错误
