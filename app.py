@@ -1,271 +1,680 @@
-
-import time
-from datetime import datetime
+import streamlit as st
 import requests
 import pandas as pd
 import numpy as np
-import streamlit as st
-from streamlit_autorefresh import st_autorefresh
+from datetime import datetime
 
 st.set_page_config(
-    page_title="复利人生 V1.0｜A股自动扫描",
+    page_title="复利人生 V1.1",
     page_icon="📈",
-    layout="wide",
-    initial_sidebar_state="expanded",
+    layout="wide"
 )
 
+# =========================
+# 5个测试板块
+# =========================
+
 SECTORS = [
-    {"name":"半导体","code":"512480"},
-    {"name":"人工智能","code":"159819"},
-    {"name":"军工","code":"512660"},
-    {"name":"电力","code":"159611"},
-    {"name":"有色金属","code":"512400"},
+    ("半导体", "512480"),
+    ("人工智能", "159819"),
+    ("军工", "512660"),
+    ("电力", "159611"),
+    ("有色金属", "512400"),
 ]
 
-EAST_FIELDS = "f2,f3,f4,f5,f6,f12,f14,f15,f16,f17,f18,f124"
 TIMEOUT = 8
 
-def east_secid(code):
-    code = str(code)
-    return ("1." if code.startswith(("6","5")) else "0.") + code
 
-def east_url_quotes(codes):
-    secids = ",".join(east_secid(c) for c in codes)
-    return (
+# =========================
+# 东方财富市场代码
+# =========================
+
+def secid(code):
+    if code.startswith(("5", "6")):
+        return "1." + code
+    return "0." + code
+
+
+# =========================
+# 获取实时行情
+# =========================
+
+def get_quotes(codes):
+
+    ids = ",".join(secid(c) for c in codes)
+
+    url = (
         "https://push2.eastmoney.com/api/qt/ulist.np/get"
-        f"?fltt=2&invt=2&fields={EAST_FIELDS}&secids={secids}"
+        "?fltt=2"
+        "&invt=2"
+        "&fields=f2,f3,f4,f5,f6,f12,f14,f15,f16,f17,f18,f124"
+        f"&secids={ids}"
     )
 
-def east_url_kline(code, count=120):
-    return (
+    response = requests.get(
+        url,
+        timeout=TIMEOUT,
+        headers={
+            "User-Agent": "Mozilla/5.0"
+        }
+    )
+
+    response.raise_for_status()
+
+    data = response.json().get("data")
+
+    if not data:
+        raise RuntimeError("东方财富实时行情返回为空")
+
+    diff = data.get("diff")
+
+    if not diff:
+        raise RuntimeError("东方财富行情数据为空")
+
+    if isinstance(diff, list):
+        rows = diff
+    else:
+        rows = list(diff.values())
+
+    result = {}
+
+    for item in rows:
+
+        code = str(item.get("f12") or "")
+
+        if not code:
+            continue
+
+        result[code] = {
+            "price": float(item.get("f2") or 0),
+            "pct": float(item.get("f3") or 0),
+            "amount": float(item.get("f6") or 0),
+            "time": str(item.get("f124") or "")
+        }
+
+    if not result:
+        raise RuntimeError("实时行情解析失败")
+
+    return result
+
+
+# =========================
+# 获取日K
+# =========================
+
+def get_kline(code):
+
+    url = (
         "https://push2his.eastmoney.com/api/qt/stock/kline/get"
         "?fields1=f1,f2,f3,f4,f5,f6"
         "&fields2=f51,f52,f53,f54,f55,f56,f57,f58,f59,f60,f61"
-        "&klt=101&fqt=1&beg=0&end=20500101"
-        f"&lmt={count}&secid={east_secid(code)}"
+        "&klt=101"
+        "&fqt=1"
+        "&beg=0"
+        "&end=20500101"
+        "&lmt=120"
+        f"&secid={secid(code)}"
     )
 
-def fetch_east_quotes(codes):
-    r = requests.get(east_url_quotes(codes), timeout=TIMEOUT,
-                     headers={"User-Agent":"Mozilla/5.0"})
-    r.raise_for_status()
-    obj = r.json()
-    diff = (obj.get("data") or {}).get("diff")
-    if not diff:
-        raise RuntimeError("东方财富实时行情返回为空")
-    rows = diff if isinstance(diff, list) else list(diff.values())
-    out = {}
-    for d in rows:
-        code = str(d.get("f12") or "")
-        if not code:
-            continue
-        out[code] = {
-            "name": d.get("f14") or "",
-            "code": code,
-            "price": float(d.get("f2") or 0),
-            "pct": float(d.get("f3") or 0),
-            "change": float(d.get("f4") or 0),
-            "volume": float(d.get("f5") or 0),
-            "amount": float(d.get("f6") or 0),
-            "high": float(d.get("f15") or 0),
-            "low": float(d.get("f16") or 0),
-            "open": float(d.get("f17") or 0),
-            "prev": float(d.get("f18") or 0),
-            "time": d.get("f124") or "",
+    response = requests.get(
+        url,
+        timeout=TIMEOUT,
+        headers={
+            "User-Agent": "Mozilla/5.0"
         }
-    if not out:
-        raise RuntimeError("东方财富实时行情解析为空")
-    return out
+    )
 
-def fetch_east_kline(code, count=120):
-    r = requests.get(east_url_kline(code, count), timeout=TIMEOUT,
-                     headers={"User-Agent":"Mozilla/5.0"})
-    r.raise_for_status()
-    obj = r.json()
-    rows = (obj.get("data") or {}).get("klines")
-    if not isinstance(rows, list) or len(rows) < 60:
-        raise RuntimeError(f"{code} K线不足60根")
-    parsed = []
+    response.raise_for_status()
+
+    data = response.json().get("data")
+
+    if not data:
+        raise RuntimeError(f"{code} K线返回为空")
+
+    rows = data.get("klines")
+
+    if not rows:
+        raise RuntimeError(f"{code} 没有K线数据")
+
+    result = []
+
     for row in rows:
-        x = str(row).split(",")
-        if len(x) < 6:
+
+        values = row.split(",")
+
+        if len(values) < 6:
             continue
+
         try:
-            parsed.append({
-                "date": x[0],
-                "open": float(x[1]),
-                "close": float(x[2]),
-                "high": float(x[3]),
-                "low": float(x[4]),
-                "volume": float(x[5]),
-            })
+
+            result.append([
+                values[0],
+                float(values[1]),
+                float(values[2]),
+                float(values[3]),
+                float(values[4]),
+                float(values[5])
+            ])
+
         except Exception:
-            pass
-    if len(parsed) < 60:
-        raise RuntimeError(f"{code} K线解析不足60根")
-    return pd.DataFrame(parsed)
+            continue
 
-def sma(s, n):
-    return float(s.tail(n).mean())
+    if len(result) < 60:
+        raise RuntimeError(
+            f"{code} 有效K线不足60根"
+        )
 
-def rsi(closes, n=14):
-    d = closes.diff().dropna().tail(n)
-    gain = d.clip(lower=0).sum()
-    loss = (-d.clip(upper=0)).sum()
-    if loss == 0:
-        return 100.0
-    return float(100 - 100 / (1 + gain / loss))
+    return pd.DataFrame(
+        result,
+        columns=[
+            "date",
+            "open",
+            "close",
+            "high",
+            "low",
+            "volume"
+        ]
+    )
 
-def ema(s, n):
-    return s.ewm(span=n, adjust=False).mean()
 
-def macd(closes):
-    dif = ema(closes, 12) - ema(closes, 26)
-    dea = ema(dif, 9)
-    return float(dif.iloc[-1]), float(dea.iloc[-1]), float((dif-dea).iloc[-1])
+# =========================
+# 计算指标
+# =========================
 
-def build_row(sec, quote, kline, market_pct):
-    c = kline["close"]
-    v = kline["volume"]
-    price = quote["price"] or float(c.iloc[-1])
-    high60 = float(kline["high"].tail(60).max())
-    low60 = float(kline["low"].tail(60).min())
-    ma5, ma10, ma20, ma60 = [sma(c, n) for n in (5,10,20,60)]
-    rrsi = rsi(c, 14)
-    dif, dea, hist = macd(c)
-    avg60 = sma(v, 60)
-    vol_ratio = quote["volume"] / avg60 * 100 if avg60 else 0
-    drawdown = (high60-price)/high60*100 if high60 else 0
-    rel = quote["pct"] - market_pct
+def calculate_sector(
+    name,
+    code,
+    quote,
+    kline,
+    index_pct
+):
 
-    if price > ma20 and hist > 0:
-        dragon = "已企稳"
-        dragon_score = 85
-    elif price > ma10 or rrsi > 50:
-        dragon = "企稳中"
-        dragon_score = 65
-    elif price < ma20 and rrsi < 40:
-        dragon = "继续下跌"
-        dragon_score = 15
+    close = kline["close"]
+    volume = kline["volume"]
+
+    price = quote["price"]
+
+    if price <= 0:
+        price = float(close.iloc[-1])
+
+    # MA
+    ma20 = float(
+        close.tail(20).mean()
+    )
+
+    ma60 = float(
+        close.tail(60).mean()
+    )
+
+    # 60日最高价
+    high60 = float(
+        kline["high"].tail(60).max()
+    )
+
+    # 回撤
+    if high60 > 0:
+
+        drawdown = (
+            (high60 - price)
+            / high60
+            * 100
+        )
+
     else:
-        dragon = "未企稳"
-        dragon_score = 35
 
-    # V1 测试评分：只使用真实可计算的行情因子，不虚构估值/政策数据
+        drawdown = 0
+
+
+    # RSI14
+
+    delta = close.diff().dropna()
+
+    gains = (
+        delta
+        .clip(lower=0)
+        .tail(14)
+        .mean()
+    )
+
+    losses = (
+        -delta
+        .clip(upper=0)
+        .tail(14)
+        .mean()
+    )
+
+    if losses == 0:
+
+        rsi = 100
+
+    else:
+
+        rsi = (
+            100
+            - 100
+            / (1 + gains / losses)
+        )
+
+
+    # MACD
+
+    ema12 = close.ewm(
+        span=12,
+        adjust=False
+    ).mean()
+
+    ema26 = close.ewm(
+        span=26,
+        adjust=False
+    ).mean()
+
+    dif = ema12 - ema26
+
+    dea = dif.ewm(
+        span=9,
+        adjust=False
+    ).mean()
+
+    macd_hist = float(
+        (dif - dea).iloc[-1]
+    )
+
+
+    # 量能比
+
+    avg_volume = float(
+        volume.tail(60).mean()
+    )
+
+    if avg_volume > 0:
+
+        volume_ratio = (
+            float(volume.iloc[-1])
+            / avg_volume
+            * 100
+        )
+
+    else:
+
+        volume_ratio = 0
+
+
+    # 相对上证
+
+    relative_strength = (
+        quote["pct"]
+        - index_pct
+    )
+
+
+    # =========================
+    # 简单评分
+    # =========================
+
     score = 0
-    score += max(0, min(25, (35-drawdown) * 0.8))
-    score += max(0, min(20, (vol_ratio-50) * 0.4))
-    score += max(0, min(20, (rrsi-30) * 0.6))
-    score += max(0, min(20, rel * 2))
-    score += dragon_score * 0.15
-    score = max(0, min(100, score))
+
+
+    # 回撤
+    score += max(
+        0,
+        25 - drawdown * 0.6
+    )
+
+
+    # RSI
+    score += np.clip(
+        (rsi - 35) * 0.35,
+        0,
+        15
+    )
+
+
+    # 量能
+    score += np.clip(
+        (volume_ratio - 70) * 0.12,
+        0,
+        15
+    )
+
+
+    # 相对大盘
+    score += np.clip(
+        relative_strength * 1.5,
+        0,
+        15
+    )
+
+
+    # MA20
+    if price > ma20:
+
+        score += 15
+
+    else:
+
+        score += 5
+
+
+    # MACD
+    if macd_hist > 0:
+
+        score += 15
+
+    else:
+
+        score += 5
+
+
+    score = float(
+        np.clip(
+            score,
+            0,
+            100
+        )
+    )
+
+
+    # 状态
+
+    if (
+        price > ma20
+        and macd_hist > 0
+    ):
+
+        status = "转强"
+
+    elif price > ma20:
+
+        status = "观察"
+
+    else:
+
+        status = "偏弱"
+
 
     return {
-        "板块": sec["name"],
-        "ETF": sec["code"],
+
+        "板块": name,
+
+        "ETF": code,
+
         "现价": price,
+
         "涨跌幅%": quote["pct"],
-        "成交额": quote["amount"],
+
         "60日回撤%": drawdown,
-        "量能比%": vol_ratio,
-        "RSI14": rrsi,
+
+        "RSI14": rsi,
+
+        "量能比%": volume_ratio,
+
+        "相对上证%": relative_strength,
+
         "MA20": ma20,
+
         "MA60": ma60,
-        "MACD柱": hist,
-        "相对大盘%": rel,
-        "龙头状态": dragon,
+
+        "MACD柱": macd_hist,
+
+        "状态": status,
+
         "机会评分": score,
-        "数据时间": quote["time"],
-        "_raw_quote": quote,
+
+        "数据时间": quote["time"]
     }
 
-@st.cache_data(ttl=20, show_spinner=False)
+
+# =========================
+# 扫描市场
+# =========================
+
 def scan_market():
-    codes = [x["code"] for x in SECTORS] + ["000001"]
-    quotes = fetch_east_quotes(codes)
-    index = quotes.get("000001")
-    if not index:
-        raise RuntimeError("无法取得上证指数实时数据")
-    market_pct = index["pct"]
-    rows, errors = [], []
-    for sec in SECTORS:
+
+    codes = [
+        code
+        for name, code in SECTORS
+    ]
+
+    # 加入上证指数
+    codes.append("000001")
+
+    quotes = get_quotes(codes)
+
+    index_quote = quotes.get("000001")
+
+    if not index_quote:
+
+        raise RuntimeError(
+            "无法取得上证指数行情"
+        )
+
+    index_pct = index_quote["pct"]
+
+    results = []
+
+    errors = []
+
+
+    for name, code in SECTORS:
+
         try:
-            q = quotes.get(sec["code"])
-            if not q:
-                raise RuntimeError("实时行情缺失")
-            k = fetch_east_kline(sec["code"], 120)
-            rows.append(build_row(sec, q, k, market_pct))
+
+            quote = quotes.get(code)
+
+            if not quote:
+
+                raise RuntimeError(
+                    "实时行情缺失"
+                )
+
+            kline = get_kline(code)
+
+            result = calculate_sector(
+                name,
+                code,
+                quote,
+                kline,
+                index_pct
+            )
+
+            results.append(result)
+
         except Exception as e:
-            errors.append(f'{sec["name"]}: {e}')
-    if not rows:
-        raise RuntimeError("5个测试板块均未取得有效行情")
-    return pd.DataFrame(rows), errors, index
 
-st.title("📈 复利人生 V1.0")
-st.caption("真实 A 股行情自动扫描测试版｜手机 / 平板可直接访问")
+            errors.append(
+                f"{name}: {str(e)}"
+            )
 
-with st.sidebar:
-    st.subheader("扫描控制")
-    auto = st.toggle("每60秒自动刷新", value=True)
-    if auto:
-        st_autorefresh(interval=60_000, key="market_refresh")
-    if st.button("🔄 立即扫描", use_container_width=True):
-        scan_market.clear()
-        st.rerun()
 
-    st.divider()
-    st.markdown("**本阶段只测试 5 个板块**")
-    for s in SECTORS:
-        st.write(f"• {s['name']}  `{s['code']}`")
+    if not results:
 
-try:
-    df, errors, index = scan_market()
-    st.success(f"🟢 实时行情连接成功 · 东方财富 · 上证 {index['pct']:+.2f}%")
-    st.caption(f"最近扫描：{datetime.now().strftime('%Y-%m-%d %H:%M:%S')} · 当前仅使用真实行情计算，不使用演示数据")
+        raise RuntimeError(
+            "5个测试板块均未取得有效数据"
+        )
 
-    cols = st.columns(4)
-    cols[0].metric("扫描板块", len(df))
-    cols[1].metric("最高机会评分", f"{df['机会评分'].max():.1f}")
-    best = df.sort_values("机会评分", ascending=False).iloc[0]
-    cols[2].metric("当前第一", best["板块"])
-    cols[3].metric("第一涨跌", f"{best['涨跌幅%']:+.2f}%")
+    return (
+        pd.DataFrame(results),
+        errors,
+        index_quote
+    )
 
-    st.subheader("🔥 自动扫描结果")
-    show = df.sort_values("机会评分", ascending=False).copy()
+
+# =========================
+# 页面
+# =========================
+
+st.title("📈 复利人生 V1.1")
+
+st.caption(
+    "真实 A股行情稳定测试版｜手机 / 平板可直接访问"
+)
+
+
+# =========================
+# 扫描按钮
+# =========================
+
+if st.button(
+    "🔄 立即扫描 A股",
+    type="primary"
+):
+
+    # 清除上一次错误
+
+    if "fatal" in st.session_state:
+
+        del st.session_state["fatal"]
+
+
+    try:
+
+        with st.spinner(
+            "正在获取真实 A股行情…"
+        ):
+
+            df, errors, index = (
+                scan_market()
+            )
+
+
+        st.session_state["df"] = df
+
+        st.session_state["errors"] = errors
+
+        st.session_state["index"] = index
+
+        st.session_state["scan_time"] = (
+            datetime.now()
+            .strftime(
+                "%Y-%m-%d %H:%M:%S"
+            )
+        )
+
+
+    except Exception as e:
+
+        st.session_state["fatal"] = str(e)
+
+
+# =========================
+# 错误
+# =========================
+
+if "fatal" in st.session_state:
+
+    st.error(
+        "🔴 A股行情连接失败"
+    )
+
+    st.code(
+        st.session_state["fatal"]
+    )
+
+    st.info(
+        "本版本不会使用随机数据。"
+        "如果行情连接失败，会直接显示真实错误。"
+    )
+
+
+# =========================
+# 成功
+# =========================
+
+if "df" in st.session_state:
+
+    df = st.session_state["df"]
+
+    index = st.session_state["index"]
+
+
+    # 按评分排序
+
+    df = df.sort_values(
+        "机会评分",
+        ascending=False
+    )
+
+
+    st.success(
+        f"🟢 实时行情连接成功｜"
+        f"东方财富｜"
+        f"上证 {index['pct']:+.2f}%"
+    )
+
+
+    # 顶部指标
+
+    col1, col2, col3, col4 = (
+        st.columns(4)
+    )
+
+
+    col1.metric(
+        "扫描板块",
+        len(df)
+    )
+
+
+    col2.metric(
+        "最高评分",
+        f"{df['机会评分'].max():.1f}"
+    )
+
+
+    col3.metric(
+        "当前第一",
+        df.iloc[0]["板块"]
+    )
+
+
+    col4.metric(
+        "第一涨跌",
+        f"{df.iloc[0]['涨跌幅%']:+.2f}%"
+    )
+
+
+    st.caption(
+        "扫描时间："
+        + st.session_state[
+            "scan_time"
+        ]
+    )
+
+
+    st.subheader(
+        "🔥 板块扫描结果"
+    )
+
+
     st.dataframe(
-        show[["板块","ETF","现价","涨跌幅%","60日回撤%","量能比%","RSI14",
-              "相对大盘%","龙头状态","机会评分","数据时间"]],
+        df,
         use_container_width=True,
-        hide_index=True,
-        column_config={
-            "现价": st.column_config.NumberColumn(format="%.3f"),
-            "涨跌幅%": st.column_config.NumberColumn(format="%+.2f"),
-            "60日回撤%": st.column_config.NumberColumn(format="%.2f"),
-            "量能比%": st.column_config.NumberColumn(format="%.1f"),
-            "RSI14": st.column_config.NumberColumn(format="%.1f"),
-            "相对大盘%": st.column_config.NumberColumn(format="%+.2f"),
-            "机会评分": st.column_config.ProgressColumn(min_value=0, max_value=100, format="%.1f"),
-        },
+        hide_index=True
     )
 
-    st.subheader("🎯 当前候选")
-    top = show.iloc[0]
-    st.info(
-        f"**{top['板块']}**｜涨跌 {top['涨跌幅%']:+.2f}%｜"
-        f"60日回撤 {top['60日回撤%']:.1f}%｜RSI {top['RSI14']:.1f}｜"
-        f"量能比 {top['量能比%']:.1f}%｜相对大盘 {top['相对大盘%']:+.2f}%｜"
-        f"评分 {top['机会评分']:.1f}"
-    )
 
-    if errors:
-        with st.expander(f"⚠️ 部分板块数据异常（{len(errors)}）"):
-            for e in errors:
-                st.write("• " + e)
+    # 异常板块
 
-except Exception as e:
-    st.error("🔴 A股行情连接失败")
-    st.warning(str(e))
+    if st.session_state.get(
+        "errors"
+    ):
+
+        with st.expander(
+            "⚠️ 部分板块数据异常"
+        ):
+
+            for error in (
+                st.session_state["errors"]
+            ):
+
+                st.write(
+                    "• " + error
+                )
+
+
+else:
+
     st.info(
-        "本测试版不会用随机数冒充行情。若数据源不可用，会明确显示失败原因。"
-        "这一步用于验证云端数据层，确认后再扩展到20+板块和完整评分系统。"
+        "点击上方「立即扫描 A股」"
+        "开始第一次真实行情测试。"
     )
