@@ -752,16 +752,15 @@ def analyze_sector(
 
     if high60 > 0:
 
-        drawdown = (
-            high60 - price
-        )
+    drawdown = (
+        (high60 - price)
         / high60
         * 100
+    )
 
-    else:
+else:
 
-        drawdown = 0
-
+    drawdown = 0
 
     # ========================================================
     # RSI
