@@ -6,33 +6,35 @@ import traceback
 from datetime import datetime
 
 # ============================================================
-# 复利人生 V1.3
-# A股实时行情 + 板块自动扫描 + 机会评分
+# 复利人生 V1.4
+# A股实时行情 + 板块轮动扫描 + 交易观察池
 #
 # 数据源：
-# 腾讯财经实时行情
+# 腾讯财经
 #
-# 当前阶段：
-# 实时行情
-# +
-# 技术指标
-# +
-# 板块评分
+# 核心：
+# 1. 实时行情
+# 2. 历史K线
+# 3. 技术指标
+# 4. 市场环境
+# 5. 板块评分
+# 6. 自动观察池
+# 7. 风险警戒
 #
 # 暂不启用自动刷新
 # ============================================================
 
 st.set_page_config(
-    page_title="复利人生 V1.3",
+    page_title="复利人生 V1.4",
     page_icon="📈",
     layout="wide"
 )
 
-# ============================================================
-# 基础配置
-# ============================================================
-
 TIMEOUT = 10
+
+# ============================================================
+# 当前观察板块
+# ============================================================
 
 SECTORS = [
     ("半导体", "512480"),
@@ -94,9 +96,7 @@ def get_quotes_tencent(codes):
 
     result = {}
 
-    lines = text.split(";")
-
-    for line in lines:
+    for line in text.split(";"):
 
         line = line.strip()
 
@@ -171,9 +171,7 @@ def get_quotes_tencent(codes):
 
 
 # ============================================================
-# 获取历史K线
-#
-# 这里使用腾讯历史行情接口
+# 腾讯历史K线
 # ============================================================
 
 def get_history_tencent(code):
@@ -201,15 +199,15 @@ def get_history_tencent(code):
     data_block = data.get("data")
 
     if not data_block:
+
         raise Exception(
             f"{code} 历史行情返回为空"
         )
 
-    stock_data = data_block.get(
-        symbol
-    )
+    stock_data = data_block.get(symbol)
 
     if not stock_data:
+
         raise Exception(
             f"{code} 找不到历史行情"
         )
@@ -334,7 +332,7 @@ def calculate_macd(close):
 
 
 # ============================================================
-# 板块分析
+# 单个板块分析
 # ============================================================
 
 def analyze_sector(
@@ -356,35 +354,32 @@ def analyze_sector(
     # MA
     # --------------------------------------------------------
 
-    ma20 = (
-        close
-        .tail(20)
-        .mean()
+    ma20 = float(
+        close.tail(20).mean()
     )
 
-    ma60 = (
-        close
-        .tail(60)
-        .mean()
+    ma60 = float(
+        close.tail(60).mean()
     )
 
 
     # --------------------------------------------------------
-    # 60日最高价
+    # 60日高点和回撤
     # --------------------------------------------------------
 
-    high60 = (
+    high60 = float(
         history["high"]
         .tail(60)
         .max()
     )
 
-
     if high60 > 0:
 
         drawdown = (
-            high60 - price
-        ) / high60 * 100
+            (high60 - price)
+            / high60
+            * 100
+        )
 
     else:
 
@@ -427,10 +422,8 @@ def analyze_sector(
     # 量能
     # --------------------------------------------------------
 
-    avg_volume = (
-        volume
-        .tail(60)
-        .mean()
+    avg_volume = float(
+        volume.tail(60).mean()
     )
 
     if avg_volume > 0:
@@ -447,7 +440,7 @@ def analyze_sector(
 
 
     # --------------------------------------------------------
-    # 相对上证
+    # 相对大盘
     # --------------------------------------------------------
 
     relative_strength = (
@@ -457,21 +450,110 @@ def analyze_sector(
 
 
     # ========================================================
+    # 趋势状态
+    # ========================================================
+
+    if price > ma20 and ma20 > ma60:
+
+        trend = "强势上升"
+
+    elif price > ma20:
+
+        trend = "短线转强"
+
+    elif price < ma20 and ma20 > ma60:
+
+        trend = "回调"
+
+    else:
+
+        trend = "偏弱"
+
+
+    # ========================================================
+    # MACD状态
+    # ========================================================
+
+    if macd_hist > 0 and macd_hist > previous_macd_hist:
+
+        macd_status = "动能增强"
+
+    elif macd_hist > 0:
+
+        macd_status = "多头"
+
+    else:
+
+        macd_status = "空头"
+
+
+    # ========================================================
+    # 量能状态
+    # ========================================================
+
+    if volume_ratio >= 150:
+
+        volume_status = "明显放量"
+
+    elif volume_ratio >= 120:
+
+        volume_status = "放量"
+
+    elif volume_ratio >= 80:
+
+        volume_status = "正常"
+
+    else:
+
+        volume_status = "缩量"
+
+
+    # ========================================================
+    # 市场相对强弱
+    # ========================================================
+
+    if relative_strength >= 2:
+
+        strength_status = "强于大盘"
+
+    elif relative_strength > 0:
+
+        strength_status = "略强于大盘"
+
+    elif relative_strength > -2:
+
+        strength_status = "略弱于大盘"
+
+    else:
+
+        strength_status = "弱于大盘"
+
+
+    # ========================================================
     # 评分
+    #
+    # 趋势       25
+    # 相对强度   20
+    # 量能       20
+    # MACD       15
+    # RSI        10
+    # 回撤       10
     # ========================================================
 
     score = 0
 
     reasons = []
 
+    warnings = []
+
 
     # --------------------------------------------------------
-    # 1. MA趋势
+    # 趋势 25
     # --------------------------------------------------------
 
     if price > ma20:
 
-        score += 15
+        score += 12
 
         reasons.append(
             "站上MA20"
@@ -479,12 +561,16 @@ def analyze_sector(
 
     else:
 
-        score += 5
+        score += 4
+
+        warnings.append(
+            "跌破MA20"
+        )
 
 
     if ma20 > ma60:
 
-        score += 15
+        score += 13
 
         reasons.append(
             "MA20高于MA60"
@@ -494,142 +580,278 @@ def analyze_sector(
 
         score += 5
 
-
-    # --------------------------------------------------------
-    # 2. RSI
-    # --------------------------------------------------------
-
-    if 50 <= rsi <= 70:
-
-        score += 15
-
-        reasons.append(
-            "RSI处于强势区"
-        )
-
-    elif 40 <= rsi < 50:
-
-        score += 8
-
-    elif rsi > 70:
-
-        score += 5
-
-        reasons.append(
-            "RSI偏高"
-        )
-
-    else:
-
-        score += 3
-
-
-    # --------------------------------------------------------
-    # 3. MACD
-    # --------------------------------------------------------
-
-    if macd_hist > 0:
-
-        score += 15
-
-        reasons.append(
-            "MACD红柱"
-        )
-
-    else:
-
-        score += 5
-
-
-    if macd_hist > previous_macd_hist:
-
-        score += 5
-
-        reasons.append(
-            "MACD动能增强"
+        warnings.append(
+            "MA20低于MA60"
         )
 
 
     # --------------------------------------------------------
-    # 4. 量能
+    # 相对强度 20
     # --------------------------------------------------------
 
-    if volume_ratio >= 120:
+    if relative_strength >= 3:
 
-        score += 15
-
-        reasons.append(
-            "成交量明显放大"
-        )
-
-    elif volume_ratio >= 90:
-
-        score += 10
-
-    else:
-
-        score += 5
-
-
-    # --------------------------------------------------------
-    # 5. 相对大盘
-    # --------------------------------------------------------
-
-    if relative_strength >= 2:
-
-        score += 10
+        score += 20
 
         reasons.append(
             "明显强于大盘"
         )
 
-    elif relative_strength > 0:
+    elif relative_strength >= 1:
 
-        score += 7
+        score += 15
 
         reasons.append(
             "强于大盘"
+        )
+
+    elif relative_strength >= 0:
+
+        score += 10
+
+    elif relative_strength >= -2:
+
+        score += 5
+
+        warnings.append(
+            "弱于大盘"
+        )
+
+    else:
+
+        score += 2
+
+        warnings.append(
+            "明显弱于大盘"
+        )
+
+
+    # --------------------------------------------------------
+    # 量能 20
+    # --------------------------------------------------------
+
+    if 120 <= volume_ratio <= 180:
+
+        score += 20
+
+        reasons.append(
+            "健康放量"
+        )
+
+    elif 100 <= volume_ratio < 120:
+
+        score += 15
+
+    elif volume_ratio > 180:
+
+        score += 12
+
+        warnings.append(
+            "量能过高，注意追涨风险"
+        )
+
+    elif volume_ratio >= 70:
+
+        score += 8
+
+    else:
+
+        score += 4
+
+        warnings.append(
+            "成交量偏低"
+        )
+
+
+    # --------------------------------------------------------
+    # MACD 15
+    # --------------------------------------------------------
+
+    if (
+        macd_hist > 0
+        and macd_hist > previous_macd_hist
+    ):
+
+        score += 15
+
+        reasons.append(
+            "MACD动能增强"
+        )
+
+    elif macd_hist > 0:
+
+        score += 11
+
+        reasons.append(
+            "MACD处于多头"
+        )
+
+    elif macd_hist <= 0:
+
+        score += 3
+
+        warnings.append(
+            "MACD偏弱"
+        )
+
+
+    # --------------------------------------------------------
+    # RSI 10
+    # --------------------------------------------------------
+
+    if 50 <= rsi <= 68:
+
+        score += 10
+
+        reasons.append(
+            "RSI处于健康强势区"
+        )
+
+    elif 45 <= rsi < 50:
+
+        score += 7
+
+    elif 68 < rsi <= 75:
+
+        score += 6
+
+        warnings.append(
+            "RSI偏高"
+        )
+
+    elif rsi > 75:
+
+        score += 3
+
+        warnings.append(
+            "RSI过热，谨防追高"
         )
 
     else:
 
         score += 3
 
+        warnings.append(
+            "RSI偏弱"
+        )
+
 
     # --------------------------------------------------------
-    # 限制最高100
+    # 回撤 10
     # --------------------------------------------------------
 
-    score = min(
-        float(score),
-        100
+    if 5 <= drawdown <= 20:
+
+        score += 10
+
+        reasons.append(
+            "处于合理回撤区"
+        )
+
+    elif drawdown < 5:
+
+        score += 6
+
+        warnings.append(
+            "距离60日高点较近"
+        )
+
+    elif drawdown <= 30:
+
+        score += 7
+
+    else:
+
+        score += 3
+
+        warnings.append(
+            "60日回撤较大"
+        )
+
+
+    score = float(
+        min(
+            max(score, 0),
+            100
+        )
     )
 
 
     # ========================================================
-    # 状态
+    # 自动分级
     # ========================================================
 
     if score >= 80:
 
-        status = "🔥 强势"
+        level = "🔥 强势"
 
     elif score >= 70:
 
-        status = "🟢 值得观察"
+        level = "🟢 重点观察"
 
     elif score >= 60:
 
-        status = "🟡 观察"
+        level = "🟡 普通观察"
 
     else:
 
-        status = "⚪ 偏弱"
+        level = "⚪ 暂不关注"
 
 
     # ========================================================
-    # 返回结果
+    # 风险警戒
     # ========================================================
+
+    risk_flags = []
+
+
+    if price < ma20:
+
+        risk_flags.append(
+            "跌破MA20"
+        )
+
+
+    if macd_hist < 0:
+
+        risk_flags.append(
+            "MACD偏弱"
+        )
+
+
+    if relative_strength < -2:
+
+        risk_flags.append(
+            "明显弱于大盘"
+        )
+
+
+    if rsi > 75:
+
+        risk_flags.append(
+            "RSI过热"
+        )
+
+
+    if volume_ratio > 200:
+
+        risk_flags.append(
+            "异常放量"
+        )
+
+
+    if len(risk_flags) == 0:
+
+        risk_level = "🟢 正常"
+
+    elif len(risk_flags) == 1:
+
+        risk_level = "🟡 注意"
+
+    else:
+
+        risk_level = "🔴 警戒"
+
 
     return {
 
@@ -641,6 +863,8 @@ def analyze_sector(
 
         "涨跌幅%": realtime["pct"],
 
+        "趋势": trend,
+
         "MA20": ma20,
 
         "MA60": ma60,
@@ -649,24 +873,88 @@ def analyze_sector(
 
         "MACD柱": macd_hist,
 
+        "MACD状态": macd_status,
+
         "量能比%": volume_ratio,
 
-        "60日回撤%": drawdown,
+        "量能状态": volume_status,
 
         "相对上证%": relative_strength,
 
+        "强弱": strength_status,
+
+        "60日回撤%": drawdown,
+
         "机会评分": score,
 
-        "状态": status,
+        "级别": level,
+
+        "风险": risk_level,
 
         "理由": "、".join(
             reasons
+        ),
+
+        "警戒": "、".join(
+            warnings
+        ),
+
+        "风险条件": "、".join(
+            risk_flags
         )
     }
 
 
 # ============================================================
-# 全市场扫描
+# 市场环境
+# ============================================================
+
+def analyze_market_environment(
+    index,
+    df
+):
+
+    index_pct = index["pct"]
+
+    positive_count = int(
+        (
+            df["涨跌幅%"] > 0
+        ).sum()
+    )
+
+    total = len(df)
+
+
+    if (
+        index_pct >= 1
+        and positive_count >= total * 0.6
+    ):
+
+        return (
+            "🟢 偏强",
+            "大盘上涨且观察板块多数上涨"
+        )
+
+
+    if (
+        index_pct <= -1
+        and positive_count <= total * 0.4
+    ):
+
+        return (
+            "🔴 偏弱",
+            "大盘走弱且多数观察板块下跌"
+        )
+
+
+    return (
+        "🟡 震荡",
+        "当前市场方向不够明确"
+    )
+
+
+# ============================================================
+# 扫描市场
 # ============================================================
 
 def scan_market():
@@ -684,20 +972,15 @@ def scan_market():
     # 实时行情
     # --------------------------------------------------------
 
-    realtime = (
-        get_quotes_tencent(
-            codes
-        )
+    realtime = get_quotes_tencent(
+        codes
     )
 
-
-    # --------------------------------------------------------
-    # 上证指数
-    # --------------------------------------------------------
 
     index = realtime.get(
         INDEX_CODE
     )
+
 
     if not index:
 
@@ -709,14 +992,14 @@ def scan_market():
     index_pct = index["pct"]
 
 
-    # --------------------------------------------------------
-    # 板块逐个分析
-    # --------------------------------------------------------
-
     results = []
 
     errors = []
 
+
+    # --------------------------------------------------------
+    # 板块分析
+    # --------------------------------------------------------
 
     for name, code in SECTORS:
 
@@ -764,7 +1047,7 @@ def scan_market():
     if not results:
 
         raise Exception(
-            "所有板块历史数据获取失败"
+            "所有板块分析失败"
         )
 
 
@@ -779,43 +1062,60 @@ def scan_market():
     )
 
 
+    market_status, market_reason = (
+        analyze_market_environment(
+            index,
+            df
+        )
+    )
+
+
     return (
         df,
         index,
-        errors
+        errors,
+        market_status,
+        market_reason
     )
 
 
 # ============================================================
-# 页面标题
+# 页面
 # ============================================================
 
 st.title(
-    "📈 复利人生 V1.3"
+    "📈 复利人生 V1.4"
 )
 
 st.caption(
-    "A股实时行情 + 板块自动扫描 + 机会评分"
+    "A股板块轮动自动扫描｜交易观察池"
 )
 
 
 st.info(
     """
-数据源：腾讯财经
+核心逻辑：
 
-当前流程：
+市场环境
+↓
+板块趋势
+↓
+相对大盘强弱
+↓
+量能
+↓
+MACD
+↓
+RSI
+↓
+回撤位置
+↓
+机会评分
+↓
+自动进入观察池
 
-实时行情
-↓
-历史K线
-↓
-技术指标
-↓
-板块评分
-↓
-自动排序
-↓
-寻找值得观察的板块
+注意：本系统用于发现和筛选机会，
+不直接代替人工做买卖决定。
 """
 )
 
@@ -843,7 +1143,9 @@ if st.button(
             (
                 df,
                 index,
-                errors
+                errors,
+                market_status,
+                market_reason
             ) = scan_market()
 
 
@@ -860,6 +1162,14 @@ if st.button(
         ] = errors
 
         st.session_state[
+            "market_status"
+        ] = market_status
+
+        st.session_state[
+            "market_reason"
+        ] = market_reason
+
+        st.session_state[
             "scan_time"
         ] = datetime.now().strftime(
             "%Y-%m-%d %H:%M:%S"
@@ -874,7 +1184,7 @@ if st.button(
 
 
 # ============================================================
-# 错误显示
+# 扫描失败
 # ============================================================
 
 if "scan_error" in st.session_state:
@@ -906,12 +1216,12 @@ if "scan_df" in st.session_state:
     ]
 
 
-    # --------------------------------------------------------
-    # 市场概览
-    # --------------------------------------------------------
+    # ========================================================
+    # 市场环境
+    # ========================================================
 
-    st.success(
-        "🟢 A股行情扫描完成"
+    st.subheader(
+        "🌏 当前市场环境"
     )
 
 
@@ -933,14 +1243,23 @@ if "scan_df" in st.session_state:
 
 
     col3.metric(
-        "扫描板块",
-        len(df)
+        "市场状态",
+        st.session_state[
+            "market_status"
+        ]
     )
 
 
     col4.metric(
-        "最高评分",
-        f"{df['机会评分'].max():.0f}"
+        "观察板块",
+        len(df)
+    )
+
+
+    st.caption(
+        st.session_state[
+            "market_reason"
+        ]
     )
 
 
@@ -956,92 +1275,73 @@ if "scan_df" in st.session_state:
 
 
     # ========================================================
-    # 第一名
-    # ========================================================
-
-    top = df.iloc[0]
-
-
-    st.subheader(
-        "🏆 当前第一观察板块"
-    )
-
-
-    st.markdown(
-        f"""
-### {top['板块']}
-
-**机会评分：{top['机会评分']:.0f} / 100**
-
-状态：**{top['状态']}**
-
-当前涨跌：**{top['涨跌幅%']:+.2f}%**
-
-主要理由：
-
-{top['理由']}
-"""
-    )
-
-
-    st.divider()
-
-
-    # ========================================================
-    # 自动筛选
+    # 观察池
     # ========================================================
 
     st.subheader(
-        "🔥 自动筛选结果"
+        "🔥 复利人生自动观察池"
     )
 
 
-    strong = df[
+    watchlist = df[
         df["机会评分"] >= 70
     ]
 
 
-    if len(strong) == 0:
+    if len(watchlist) == 0:
 
         st.warning(
             "当前没有板块达到70分观察标准。"
         )
 
+        st.write(
+            "纪律优先：没有机会时，可以选择等待。"
+        )
+
     else:
 
         st.success(
-            f"当前共有 {len(strong)} 个板块进入观察池"
+            f"当前共有 {len(watchlist)} 个板块进入观察池"
         )
 
 
-        for _, row in strong.iterrows():
+        for _, row in watchlist.iterrows():
 
-            st.markdown(
-                f"""
-**{row['板块']}｜{row['状态']}｜{row['机会评分']:.0f}分**
+            with st.container():
 
-涨跌幅：{row['涨跌幅%']:+.2f}%
+                st.markdown(
+                    f"""
+### {row['板块']}  ·  {row['级别']}
 
-RSI：{row['RSI14']:.1f}
+**机会评分：{row['机会评分']:.0f} / 100**
 
-量能比：{row['量能比%']:.0f}%
+涨跌幅：**{row['涨跌幅%']:+.2f}%**
 
-60日回撤：{row['60日回撤%']:.1f}%
+趋势：**{row['趋势']}**
 
-理由：{row['理由']}
+相对大盘：**{row['强弱']}**
+
+量能：**{row['量能状态']}**
+
+风险状态：**{row['风险']}**
+
+**入选理由：**
+{row['理由']}
+
+**警戒：**
+{row['警戒'] if row['警戒'] else '暂无明显警戒条件'}
 """
-            )
+                )
 
-
-    st.divider()
+                st.divider()
 
 
     # ========================================================
-    # 完整评分表
+    # 完整排行榜
     # ========================================================
 
     st.subheader(
-        "📊 板块评分排行榜"
+        "📊 板块机会排行榜"
     )
 
 
@@ -1051,15 +1351,15 @@ RSI：{row['RSI14']:.1f}
             "ETF",
             "现价",
             "涨跌幅%",
-            "MA20",
-            "MA60",
+            "趋势",
             "RSI14",
-            "MACD柱",
+            "MACD状态",
             "量能比%",
+            "强弱",
             "60日回撤%",
-            "相对上证%",
             "机会评分",
-            "状态"
+            "级别",
+            "风险"
         ]
     ]
 
@@ -1069,6 +1369,42 @@ RSI：{row['RSI14']:.1f}
         use_container_width=True,
         hide_index=True
     )
+
+
+    # ========================================================
+    # 风险警戒排行榜
+    # ========================================================
+
+    st.subheader(
+        "⚠️ 风险警戒"
+    )
+
+
+    danger = df[
+        df["风险"].isin(
+            [
+                "🟡 注意",
+                "🔴 警戒"
+            ]
+        )
+    ]
+
+
+    if len(danger) == 0:
+
+        st.success(
+            "当前观察池没有明显风险警戒。"
+        )
+
+    else:
+
+        for _, row in danger.iterrows():
+
+            st.warning(
+                f"{row['板块']}｜"
+                f"{row['风险']}｜"
+                f"{row['风险条件']}"
+            )
 
 
     # ========================================================
@@ -1105,5 +1441,5 @@ st.divider()
 
 
 st.caption(
-    "复利人生 V1.3｜先稳定，再自动化"
+    "复利人生 V1.4｜自动发现机会，不自动替你交易"
 )
