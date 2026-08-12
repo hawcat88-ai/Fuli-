@@ -1667,7 +1667,249 @@ if st.button(
         st.session_state[
             "scan_error"
         ] = traceback.format_exc()
+# ============================================================
+# V1.7 猎手工作台
+# ============================================================
 
+if "scan_df" in st.session_state:
+
+    df = st.session_state["scan_df"]
+
+    tomorrow_watchlist = st.session_state.get(
+        "tomorrow_watchlist",
+        pd.DataFrame()
+    )
+
+    market_average_pct = st.session_state.get(
+        "market_average_pct",
+        0
+    )
+
+    # --------------------------------------------------------
+    # 市场温度
+    # --------------------------------------------------------
+
+    st.markdown("---")
+
+    st.subheader(
+        "🎯 复利人生 V1.7 · 猎手工作台"
+    )
+
+    # --------------------------------------------------------
+    # 根据指数重新计算市场温度
+    # --------------------------------------------------------
+
+    index_data = st.session_state.get(
+        "index_data",
+        {}
+    )
+
+    temperature_data = calculate_market_temperature(
+        index_data
+    )
+
+    temperature = temperature_data[
+        "temperature"
+    ]
+
+    temperature_status = temperature_data[
+        "status"
+    ]
+
+    temperature_description = temperature_data[
+        "description"
+    ]
+
+    # --------------------------------------------------------
+    # 三项核心指标
+    # --------------------------------------------------------
+
+    col1, col2, col3 = st.columns(3)
+
+    with col1:
+
+        st.metric(
+            "🌡️ 市场温度",
+            f"{temperature:.1f}"
+        )
+
+    with col2:
+
+        st.metric(
+            "市场状态",
+            temperature_status
+        )
+
+    with col3:
+
+        st.metric(
+            "指数平均涨跌",
+            f"{market_average_pct:+.2f}%"
+        )
+
+    # --------------------------------------------------------
+    # 市场环境说明
+    # --------------------------------------------------------
+
+    if temperature >= 70:
+
+        st.error(
+            "🔴 进攻\n\n"
+            + temperature_description
+        )
+
+    elif temperature >= 45:
+
+        st.warning(
+            "🟡 震荡\n\n"
+            + temperature_description
+        )
+
+    else:
+
+        st.success(
+            "🟢 防守\n\n"
+            + temperature_description
+        )
+
+    # ========================================================
+    # 今日猎手 TOP 5
+    # ========================================================
+
+    st.markdown(
+        "### 🔥 今日猎手 TOP 5"
+    )
+
+    top5 = df.head(5)
+
+    for _, row in top5.iterrows():
+
+        category = row.get(
+            "分类",
+            "🟡 等待确认"
+        )
+
+        score = row.get(
+            "猎手评分",
+            0
+        )
+
+        if category in [
+            "🔴 重点观察",
+            "🔴 可以研究"
+        ]:
+
+            st.error(
+                f"🔴 **{row['板块']}**  "
+                f"｜猎手评分 **{score:.0f}**  "
+                f"｜{category}"
+            )
+
+        elif category == "🟡 等待确认":
+
+            st.warning(
+                f"🟡 **{row['板块']}**  "
+                f"｜猎手评分 **{score:.0f}**  "
+                f"｜{category}"
+            )
+
+        elif category in [
+            "🟢 风险回避",
+            "🟢 回避"
+        ]:
+
+            st.success(
+                f"🟢 **{row['板块']}**  "
+                f"｜猎手评分 **{score:.0f}**  "
+                f"｜{category}"
+            )
+
+        else:
+
+            st.info(
+                f"**{row['板块']}**  "
+                f"｜猎手评分 **{score:.0f}**  "
+                f"｜{category}"
+            )
+
+    # ========================================================
+    # 明日观察池
+    # ========================================================
+
+    st.markdown(
+        "### 📅 明日观察池"
+    )
+
+    if tomorrow_watchlist.empty:
+
+        st.info(
+            "目前没有符合条件的板块。"
+            "等待新的结构性机会。"
+        )
+
+    else:
+
+        watch_columns = [
+            "板块",
+            "涨跌幅%",
+            "猎手评分",
+            "分类",
+            "趋势",
+            "相对市场%",
+            "量能比%",
+            "RSI14"
+        ]
+
+        available_columns = [
+            col
+            for col in watch_columns
+            if col in tomorrow_watchlist.columns
+        ]
+
+        st.dataframe(
+            tomorrow_watchlist[
+                available_columns
+            ],
+            use_container_width=True,
+            hide_index=True
+        )
+
+    # ========================================================
+    # 猎手雷达
+    # ========================================================
+
+    st.markdown(
+        "### 📡 A股板块猎手雷达"
+    )
+
+    radar_columns = [
+        "排名",
+        "板块",
+        "涨跌幅%",
+        "猎手评分",
+        "分类",
+        "趋势",
+        "相对市场%",
+        "量能比%",
+        "RSI14",
+        "追涨风险",
+        "风险",
+        "猎手结论"
+    ]
+
+    available_radar_columns = [
+        col
+        for col in radar_columns
+        if col in df.columns
+    ]
+
+    st.dataframe(
+        df[
+            available_radar_columns
+        ],
+        use_container_width=True,
+        hide_index=True
+    )
 
 # ============================================================
 # 错误
