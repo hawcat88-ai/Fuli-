@@ -1464,14 +1464,41 @@ def scan_market():
             )
 
             result = analyze_sector(
-                name,
-                code,
-                realtime_item,
-                history,
-                market_pct
-            )
+    name,
+    code,
+    realtime_item,
+    history,
+    market_pct
+)
 
-            results.append(result)
+# ========================================================
+# V1.7 猎手评分
+# ========================================================
+
+result["猎手评分"] = calculate_hunter_score(
+    result
+)
+
+# ========================================================
+# V1.7 自动分类
+# ========================================================
+
+result["分类"] = classify_hunter(
+    result
+)
+
+# ========================================================
+# 临时市场温度
+#
+# 后面第三段接入真正的市场温度
+# ========================================================
+
+result["猎手结论"] = generate_hunter_conclusion(
+    result,
+    50
+)
+
+results.append(result)
 
         except Exception as e:
 
