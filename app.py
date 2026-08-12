@@ -1542,27 +1542,19 @@ df.insert(
 tomorrow_watchlist = build_tomorrow_watchlist(
     df
 )
-    ).reset_index(drop=True)
-
-    df.insert(
-        0,
-        "排名",
-        range(1, len(df) + 1)
-    )
-
-    return (
-        df,
-        index_data,
-        errors,
-        index_errors,
-        market_status,
-        market_reason,
-        market_pct,
-        market_average_pct,
-        positive_count,
-        negative_count
-    )
-
+return (
+    df,
+    index_data,
+    errors,
+    index_errors,
+    market_status,
+    market_reason,
+    market_pct,
+    market_average_pct,
+    positive_count,
+    negative_count,
+    tomorrow_watchlist
+)
 
 # ============================================================
 # 页面
