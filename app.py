@@ -1482,10 +1482,6 @@ def scan_market():
             # 第三段会接入真正的市场温度
             # =================================================
 
-            result["猎手结论"] = generate_hunter_conclusion(
-                result,
-                50
-            )
 
             results.append(
                 result
@@ -1500,7 +1496,21 @@ def scan_market():
     # ========================================================
     # 判断是否有结果
     # ========================================================
+# ========================================================
+# V1.7 市场温度
+# ========================================================
 
+market_temperature_data = calculate_market_temperature(
+    index_data
+)
+
+market_temperature = market_temperature_data[
+    "temperature"
+]
+
+market_temperature_status = market_temperature_data[
+    "status"
+]
     if not results:
 
         raise Exception(
