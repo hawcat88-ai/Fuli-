@@ -1524,7 +1524,17 @@ market_temperature_status = market_temperature_data[
     df = pd.DataFrame(
         results
     )
+# ========================================================
+# V1.7 根据真实市场温度生成猎手结论
+# ========================================================
 
+df["猎手结论"] = df.apply(
+    lambda row: generate_hunter_conclusion(
+        row,
+        market_temperature
+    ),
+    axis=1
+)
     # ========================================================
     # V1.7
     # 按猎手评分排序
