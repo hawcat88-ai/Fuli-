@@ -1514,9 +1514,34 @@ results.append(result)
 
     df = pd.DataFrame(results)
 
-    df = df.sort_values(
-        "机会评分",
-        ascending=False
+# ========================================================
+# V1.7
+# 按猎手评分排序
+# ========================================================
+
+df = df.sort_values(
+    "猎手评分",
+    ascending=False
+).reset_index(
+    drop=True
+)
+
+df.insert(
+    0,
+    "排名",
+    range(
+        1,
+        len(df) + 1
+    )
+)
+
+# ========================================================
+# 明日观察池
+# ========================================================
+
+tomorrow_watchlist = build_tomorrow_watchlist(
+    df
+)
     ).reset_index(drop=True)
 
     df.insert(
