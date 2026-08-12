@@ -1496,26 +1496,28 @@ def scan_market():
     # ========================================================
     # 判断是否有结果
     # ========================================================
-# ========================================================
-# V1.7 市场温度
-# ========================================================
 
-market_temperature_data = calculate_market_temperature(
-    index_data
-)
-
-market_temperature = market_temperature_data[
-    "temperature"
-]
-
-market_temperature_status = market_temperature_data[
-    "status"
-]
     if not results:
 
         raise Exception(
             "所有板块分析失败"
         )
+
+    # ========================================================
+    # V1.7 市场温度
+    # ========================================================
+
+    market_temperature_data = calculate_market_temperature(
+        index_data
+    )
+
+    market_temperature = market_temperature_data[
+        "temperature"
+    ]
+
+    market_temperature_status = market_temperature_data[
+        "status"
+    ]
 
     # ========================================================
     # 转换DataFrame
@@ -1524,17 +1526,19 @@ market_temperature_status = market_temperature_data[
     df = pd.DataFrame(
         results
     )
-# ========================================================
-# V1.7 根据真实市场温度生成猎手结论
-# ========================================================
 
-df["猎手结论"] = df.apply(
-    lambda row: generate_hunter_conclusion(
-        row,
-        market_temperature
-    ),
-    axis=1
-)
+    # ========================================================
+    # V1.7 根据真实市场温度生成猎手结论
+    # ========================================================
+
+    df["猎手结论"] = df.apply(
+        lambda row: generate_hunter_conclusion(
+            row,
+            market_temperature
+        ),
+        axis=1
+    )
+
     # ========================================================
     # V1.7
     # 按猎手评分排序
@@ -1585,7 +1589,6 @@ df["猎手结论"] = df.apply(
         negative_count,
         tomorrow_watchlist
     )
-
 # ============================================================
 # 页面
 # ============================================================
