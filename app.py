@@ -1643,7 +1643,8 @@ if st.button(
             market_pct,
             market_average_pct,
             positive_count,
-            negative_count
+            negative_count,
+            tomorrow_watchlist
         ) = result
 
         st.session_state["scan_df"] = df
@@ -1656,6 +1657,7 @@ if st.button(
         st.session_state["market_average_pct"] = market_average_pct
         st.session_state["positive_count"] = positive_count
         st.session_state["negative_count"] = negative_count
+        st.session_state["tomorrow_watchlist"] = tomorrow_watchlist        
         st.session_state["scan_time"] = datetime.now().strftime(
             "%Y-%m-%d %H:%M:%S"
         )
