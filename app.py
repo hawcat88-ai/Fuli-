@@ -357,7 +357,18 @@ def analyze_sector(
     history,
     market_pct
 ):
+result["猎手评分"] = calculate_hunter_score(
+    result
+)
 
+result["分类"] = classify_hunter(
+    result
+)
+
+result["猎手结论"] = generate_hunter_conclusion(
+    result,
+    50
+)
     close = history["close"]
     volume = history["volume"]
 
