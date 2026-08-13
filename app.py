@@ -1581,6 +1581,9 @@ def scan_market():
             result["分类"] = classify_hunter(
                 result
             )
+            result["猎手优先级"] = calculate_hunter_priority(
+               result
+            )
 
             # =================================================
             # V1.7 猎手结论
@@ -1650,10 +1653,9 @@ def scan_market():
     # V1.7
     # 按猎手评分排序
     # ========================================================
-
     df = df.sort_values(
-        "猎手评分",
-        ascending=False
+         "猎手优先级",
+         ascending=False
     ).reset_index(
         drop=True
     )
