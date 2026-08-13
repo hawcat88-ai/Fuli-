@@ -1785,6 +1785,9 @@ def scan_market():
             result["猎手优先级"] = calculate_hunter_priority(
                result
             )
+            result["潜伏评分"] = calculate_hidden_score(
+               result
+            )
 
             # =================================================
             # V1.7 猎手结论
